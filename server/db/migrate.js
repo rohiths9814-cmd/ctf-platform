@@ -1,3 +1,8 @@
+/**
+ * Database Migration Script
+ * Creates all tables if they do not exist.
+ * Run with: node server/db/migrate.js
+ */
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -5,14 +10,16 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const db = new Database(join(__dirname, 'ctf.db'));
+const dbPath = join(__dirname, '..', 'ctf.db');
+const db = new Database(dbPath);
 
-// Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// ─── Schema ──────────────────────────────────────────
+console.log(`\n  📦 Running migration on: ${dbPath}\n`);
+
 db.exec(`
+  -- Teams table
   CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
@@ -21,6 +28,7 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Users table (password_hash, NOT password)
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -31,6 +39,7 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Challenges table
   CREATE TABLE IF NOT EXISTS challenges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
@@ -43,6 +52,7 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Solves table (tracks which user solved which challenge)
   CREATE TABLE IF NOT EXISTS solves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -52,6 +62,7 @@ db.exec(`
     UNIQUE(user_id, challenge_id)
   );
 
+  -- Announcements table
   CREATE TABLE IF NOT EXISTS announcements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT DEFAULT 'info' CHECK (type IN ('broadcast', 'alert', 'info')),
@@ -60,6 +71,7 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  -- Join requests table (team captain approval system)
   CREATE TABLE IF NOT EXISTS join_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -71,38 +83,10 @@ db.exec(`
   );
 `);
 
-// ─── Migrations (safe to run repeatedly) ─────────────
-// Add captain_id to teams if missing
-try {
-  db.prepare("SELECT captain_id FROM teams LIMIT 0").get();
-} catch {
-  db.exec("ALTER TABLE teams ADD COLUMN captain_id INTEGER REFERENCES users(id)");
-  console.log("  ✅ Migrated: added captain_id to teams");
-}
+// Verify tables were created
+const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+console.log('  ✅ Tables created:');
+tables.forEach((t) => console.log(`     - ${t.name}`));
 
-// Migrate: rename password → password_hash if old column exists
-try {
-  db.prepare("SELECT password FROM users LIMIT 0").get();
-  // Old column exists — recreate table
-  console.log("  🔄 Migrating users table: password → password_hash...");
-  db.exec(`
-    ALTER TABLE users RENAME TO users_old;
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-      team_id INTEGER REFERENCES teams(id),
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-    INSERT INTO users (id, username, email, password_hash, role, team_id, created_at)
-      SELECT id, username, email, password, role, team_id, created_at FROM users_old;
-    DROP TABLE users_old;
-  `);
-  console.log("  ✅ Migrated: password → password_hash");
-} catch {
-  // password column doesn't exist — already migrated or fresh
-}
-
-export default db;
+db.close();
+console.log('\n  Migration complete\n');

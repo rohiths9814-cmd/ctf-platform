@@ -49,10 +49,33 @@ export default function Admin() {
     (data) => announcementsAPI.create(data)
   );
 
+  const {
+    data: joinRequestsData,
+    loading: joinRequestsLoading,
+  } = useApi(() => adminChallengesAPI.getJoinRequests());
+
+  const {
+    data: health,
+    loading: healthLoading,
+    execute: refetchHealth,
+  } = useApi(() => adminChallengesAPI.getHealth());
+
   const stats = statsData || {};
   const challenges = challengesData?.challenges || [];
   const announcements = announcementsData?.announcements || [];
   const users = usersData?.users || [];
+  const joinRequests = joinRequestsData?.requests || [];
+
+  // Format seconds into human readable uptime
+  const formatUptime = (seconds) => {
+    if (!seconds) return '0s';
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
 
   const filteredChallenges = activeFilter === 'ALL'
     ? challenges
@@ -333,7 +356,65 @@ export default function Admin() {
         )}
       </div>
 
-      {/* Announcements */}
+      {/* Join Requests */}
+      <div className="glass-panel rounded-lg overflow-hidden">
+        <div className="p-inner-padding border-b border-white/20 flex justify-between items-center bg-white/10">
+          <h3 className="font-h3 text-h3 text-secondary flex items-center gap-2">
+            <span className="material-symbols-outlined">group_add</span>
+            JOIN_REQUESTS
+          </h3>
+          <span className="text-[10px] font-mono text-on-surface-variant">
+            {joinRequests.filter((r) => r.status === 'pending').length} PENDING
+          </span>
+        </div>
+
+        {joinRequestsLoading ? (
+          <LoadingSpinner text="LOADING REQUESTS..." />
+        ) : joinRequests.length === 0 ? (
+          <EmptyState icon="group_add" title="NO REQUESTS" message="No join requests have been submitted." />
+        ) : (
+          <table className="w-full text-left">
+            <thead className="bg-surface-container-low">
+              <tr className="text-label-caps text-[10px] text-on-surface-variant/70">
+                <th className="px-inner-padding py-3">USER</th>
+                <th className="px-inner-padding py-3">EMAIL</th>
+                <th className="px-inner-padding py-3">TEAM</th>
+                <th className="px-inner-padding py-3">CAPTAIN</th>
+                <th className="px-inner-padding py-3">REQUESTED</th>
+                <th className="px-inner-padding py-3">STATUS</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-outline-variant/10">
+              {joinRequests.map((jr) => (
+                <tr key={jr.id} className="hover:bg-white/20 transition-colors">
+                  <td className="px-inner-padding py-4 font-bold text-primary">{jr.username}</td>
+                  <td className="px-inner-padding py-4 text-xs text-on-surface-variant">{jr.email}</td>
+                  <td className="px-inner-padding py-4 text-xs font-mono">{jr.team_name}</td>
+                  <td className="px-inner-padding py-4 text-xs font-mono text-secondary">{jr.captain_name || '—'}</td>
+                  <td className="px-inner-padding py-4 text-[11px] text-on-surface-variant">
+                    {new Date(jr.created_at).toLocaleString()}
+                  </td>
+                  <td className="px-inner-padding py-4">
+                    <span
+                      className={`px-2 py-1 text-[10px] font-bold rounded-full ${
+                        jr.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : jr.status === 'approved'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-red-100 text-red-700'
+                      }`}
+                    >
+                      {jr.status.toUpperCase()}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Announcements + System Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
         <div className="glass-panel rounded-lg flex flex-col">
           <div className="p-inner-padding border-b border-white/20">
@@ -381,46 +462,98 @@ export default function Admin() {
           </div>
         </div>
 
-        {/* Quick Stats */}
+        {/* System Health — Real Metrics */}
         <div className="glass-panel rounded-lg p-inner-padding">
-          <h3 className="font-h3 text-h3 text-primary mb-4 flex items-center gap-2">
+          <h3 className="font-h3 text-h3 text-primary mb-5 flex items-center gap-2">
             <span className="material-symbols-outlined">monitoring</span>
             SYSTEM_HEALTH
           </h3>
-          {statsLoading ? (
+          {healthLoading ? (
             <LoadingSpinner />
-          ) : statsError ? (
-            <ErrorState message="Failed to load stats" onRetry={refetchStats} />
+          ) : !health ? (
+            <ErrorState message="Failed to load health" onRetry={refetchHealth} />
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-5">
+              {/* Uptime + DB */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-surface-container/30 rounded-lg">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                    <span className="text-[10px] font-label-caps opacity-60">UPTIME</span>
+                  </div>
+                  <p className="font-mono text-lg text-primary font-bold">
+                    {formatUptime(health.uptime_seconds)}
+                  </p>
+                </div>
+                <div className="p-3 bg-surface-container/30 rounded-lg">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="material-symbols-outlined text-sm text-secondary">database</span>
+                    <span className="text-[10px] font-label-caps opacity-60">DB SIZE</span>
+                  </div>
+                  <p className="font-mono text-lg text-secondary font-bold">{health.db_size_mb} MB</p>
+                </div>
+              </div>
+
+              {/* Activity last 24h */}
+              <div>
+                <p className="text-[10px] font-label-caps opacity-50 mb-3">LAST 24H ACTIVITY</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg border border-primary/10">
+                    <span className="material-symbols-outlined text-primary text-xl">flag</span>
+                    <div>
+                      <p className="font-mono text-xl font-bold text-primary">{health.recent_solves_24h}</p>
+                      <p className="text-[10px] opacity-50">SOLVES</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-secondary/5 rounded-lg border border-secondary/10">
+                    <span className="material-symbols-outlined text-secondary text-xl">person_add</span>
+                    <div>
+                      <p className="font-mono text-xl font-bold text-secondary">{health.recent_registrations_24h}</p>
+                      <p className="text-[10px] opacity-50">REGISTRATIONS</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 bg-surface-container/30 rounded-lg text-center">
+                  <p className="text-[9px] font-label-caps opacity-50">ACTIVE TEAMS</p>
+                  <p className="font-mono text-lg font-bold text-primary mt-1">
+                    {health.active_teams}/{health.total_teams}
+                  </p>
+                </div>
+                <div className="p-3 bg-surface-container/30 rounded-lg text-center">
+                  <p className="text-[9px] font-label-caps opacity-50">AVG SCORE</p>
+                  <p className="font-mono text-lg font-bold text-secondary mt-1">{health.avg_team_score}</p>
+                </div>
+                <div className="p-3 bg-surface-container/30 rounded-lg text-center">
+                  <p className="text-[9px] font-label-caps opacity-50">PENDING</p>
+                  <p className={`font-mono text-lg font-bold mt-1 ${
+                    health.pending_requests > 0 ? 'text-yellow-500' : 'text-green-500'
+                  }`}>
+                    {health.pending_requests}
+                  </p>
+                </div>
+              </div>
+
+              {/* Challenge coverage */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-mono">CHALLENGE COMPLETION</span>
-                  <span className="text-sm font-mono text-primary">
-                    {stats.total_challenges > 0
-                      ? Math.round((stats.total_solves / (stats.total_challenges * stats.total_teams || 1)) * 100)
-                      : 0}%
+                  <span className="text-xs font-mono">CHALLENGE COVERAGE</span>
+                  <span className="text-xs font-mono text-primary">
+                    {health.active_challenges}/{health.total_challenges} ACTIVE
                   </span>
                 </div>
-                <div className="w-full h-1 bg-surface-variant rounded-full">
+                <div className="w-full h-2 bg-surface-variant rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-primary rounded-full"
+                    className="h-full bg-gradient-to-r from-primary to-secondary rounded-full transition-all"
                     style={{
-                      width: `${stats.total_challenges > 0
-                        ? Math.min(100, Math.round((stats.total_solves / (stats.total_challenges * stats.total_teams || 1)) * 100))
+                      width: `${health.total_challenges > 0
+                        ? Math.round((health.active_challenges / health.total_challenges) * 100)
                         : 0}%`,
                     }}
                   />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="p-4 bg-surface-container/30 rounded-lg text-center">
-                  <p className="text-xs font-label-caps opacity-50">AVG SCORE</p>
-                  <p className="text-2xl font-h2 text-primary mt-1">{stats.avg_score || 0}</p>
-                </div>
-                <div className="p-4 bg-surface-container/30 rounded-lg text-center">
-                  <p className="text-xs font-label-caps opacity-50">CATEGORIES</p>
-                  <p className="text-2xl font-h2 text-secondary mt-1">{stats.total_categories || 0}</p>
                 </div>
               </div>
             </div>

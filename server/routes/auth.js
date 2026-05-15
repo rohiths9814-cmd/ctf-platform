@@ -7,6 +7,20 @@ import { generateToken } from '../middleware/auth.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'xyz_ctf_secret_key_change_in_production';
 const router = Router();
 
+// Email format validation regex
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Helper: compute user's score from solves
+function getUserScore(userId) {
+  const result = db.prepare(`
+    SELECT COALESCE(SUM(c.points), 0) as score
+    FROM solves s
+    JOIN challenges c ON s.challenge_id = c.id
+    WHERE s.user_id = ?
+  `).get(userId);
+  return result?.score || 0;
+}
+
 // POST /api/auth/register
 router.post('/register', (req, res) => {
   try {
@@ -15,16 +29,25 @@ router.post('/register', (req, res) => {
     if (!username || !email || !password) {
       return res.status(400).json({ message: 'Username, email, and password are required' });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+
+    // A2: Email format validation
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
     }
 
-    // Check if user already exists (case-insensitive username check)
+    // A3: Password minimum 8 characters
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    // Check if user already exists (case-insensitive)
     const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)').get(email, username);
     if (existing) {
-      return res.status(400).json({ message: 'Email or username already taken' });
+      // A4: Status 409 for duplicate
+      return res.status(409).json({ message: 'Email or username already taken' });
     }
 
+    // A1: Store as password_hash
     const hashedPassword = bcrypt.hashSync(password, 10);
     let teamId = null;
 
@@ -46,9 +69,9 @@ router.post('/register', (req, res) => {
       }
     }
 
-    // Create user
+    // A1: Insert with password_hash column
     const result = db.prepare(
-      'INSERT INTO users (username, email, password, team_id) VALUES (?, ?, ?, ?)'
+      'INSERT INTO users (username, email, password_hash, team_id) VALUES (?, ?, ?, ?)'
     ).run(username, email, hashedPassword, teamId);
 
     const user = db.prepare('SELECT id, username, email, role, team_id, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
@@ -60,11 +83,14 @@ router.post('/register', (req, res) => {
       teamName = team?.name;
     }
 
+    // A5: Compute score (will be 0 for new user, but consistent)
+    const score = getUserScore(user.id);
+
     const token = generateToken(user);
 
     res.status(201).json({
       token,
-      user: { ...user, team_name: teamName },
+      user: { ...user, team_name: teamName, score },
     });
   } catch (err) {
     console.error('Register error:', err);
@@ -86,7 +112,8 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const valid = bcrypt.compareSync(password, user.password);
+    // A1: Compare with password_hash column
+    const valid = bcrypt.compareSync(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -97,6 +124,9 @@ router.post('/login', (req, res) => {
       const team = db.prepare('SELECT name FROM teams WHERE id = ?').get(user.team_id);
       teamName = team?.name;
     }
+
+    // A5: Compute score
+    const score = getUserScore(user.id);
 
     const token = generateToken(user);
 
@@ -109,6 +139,7 @@ router.post('/login', (req, res) => {
         role: user.role,
         team_id: user.team_id,
         team_name: teamName,
+        score,
         created_at: user.created_at,
       },
     });
@@ -136,7 +167,10 @@ router.get('/me', (req, res) => {
       teamName = team?.name;
     }
 
-    res.json({ user: { ...user, team_name: teamName } });
+    // A5: Compute score
+    const score = getUserScore(user.id);
+
+    res.json({ user: { ...user, team_name: teamName, score } });
   } catch {
     res.status(401).json({ message: 'Invalid token' });
   }

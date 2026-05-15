@@ -1,26 +1,32 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { cached, invalidatePrefix } from '../utils/cache.js';
 
 const router = Router();
 
 // GET /api/challenges — list active challenges (no flag exposed)
 router.get('/', authMiddleware, (req, res) => {
   try {
-    const challenges = db.prepare(
-      `SELECT id, title, description, category, difficulty, points, status, created_at
-       FROM challenges WHERE status = 'active' ORDER BY category, difficulty`
-    ).all();
+    // Cache challenge list (3s) and solve counts (5s) — user solves are per-user so not cached
+    const challenges = cached('challenges:active', 3000, () => {
+      return db.prepare(
+        `SELECT id, title, description, category, difficulty, points, status, created_at
+         FROM challenges WHERE status = 'active' ORDER BY category, difficulty`
+      ).all();
+    });
 
-    // Get user's solves
+    // Get user's solves (per-user, not cached)
     const solves = db.prepare('SELECT challenge_id FROM solves WHERE user_id = ?').all(req.user.id);
     const solvedIds = new Set(solves.map((s) => s.challenge_id));
 
-    // Get solve counts per challenge
-    const solveCounts = db.prepare(
-      'SELECT challenge_id, COUNT(*) as count FROM solves GROUP BY challenge_id'
-    ).all();
-    const countMap = Object.fromEntries(solveCounts.map((s) => [s.challenge_id, s.count]));
+    // Cache solve counts (5s)
+    const countMap = cached('challenges:solvecounts', 5000, () => {
+      const solveCounts = db.prepare(
+        'SELECT challenge_id, COUNT(*) as count FROM solves GROUP BY challenge_id'
+      ).all();
+      return Object.fromEntries(solveCounts.map((s) => [s.challenge_id, s.count]));
+    });
 
     res.json({
       challenges: challenges.map((c) => ({
@@ -62,6 +68,10 @@ router.post('/:id/submit', authMiddleware, (req, res) => {
     db.prepare('INSERT INTO solves (user_id, challenge_id, team_id) VALUES (?, ?, ?)').run(
       req.user.id, challengeId, user.team_id
     );
+
+    // Invalidate caches so leaderboard and solve counts update
+    invalidatePrefix('leaderboard');
+    invalidatePrefix('challenges:solvecounts');
 
     res.json({
       success: true,

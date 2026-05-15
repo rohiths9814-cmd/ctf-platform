@@ -4,52 +4,50 @@ import { leaderboardAPI } from '../api/endpoints';
 import { LoadingSpinner, EmptyState, ErrorState } from '../components/ui/StatusStates';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, Area, AreaChart,
+  CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 
-// Distinct colors for up to 10 teams
+// Distinct colors matching CTFd style
 const TEAM_COLORS = [
-  '#00696F', '#7B5EA7', '#E09100', '#D93F4C', '#2E8B57',
-  '#4169E1', '#FF6B6B', '#20B2AA', '#DAA520', '#8B4513',
+  '#FF6384', '#4169E1', '#9ACD32', '#9932CC', '#20B2AA',
+  '#FF4500', '#FF69B4', '#FFD700', '#00CED1', '#2E8B57',
 ];
 
-function ScoreChart({ chartData, teams }) {
-  const [chartType, setChartType] = useState('area');
-
+function ScoreChart({ chartData, teams, rankings }) {
   if (!chartData || chartData.length === 0) {
     return (
-      <div className="glass-card rounded-xl p-inner-padding">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="material-symbols-outlined text-primary">show_chart</span>
-          <h3 className="font-h3 text-h3 tracking-tight text-primary">SCORE_TIMELINE</h3>
-        </div>
-        <div className="flex flex-col items-center justify-center py-12 text-on-surface-variant/40">
+      <div className="bg-white/95 rounded-xl p-8 shadow-sm border border-gray-200">
+        <h3 className="text-center text-xl font-semibold text-gray-800 mb-6">Top 10 Teams</h3>
+        <div className="flex flex-col items-center justify-center py-16 text-gray-400">
           <span className="material-symbols-outlined text-[48px] mb-2">timeline</span>
-          <p className="font-mono text-sm">No solve data yet</p>
-          <p className="text-xs mt-1">Chart will appear once teams start solving challenges</p>
+          <p className="text-sm font-medium">No solve data yet</p>
+          <p className="text-xs mt-1 text-gray-400">Chart will appear once teams start solving challenges</p>
         </div>
       </div>
     );
   }
 
-  // Format time for X axis
-  const formatTime = (timeStr) => {
+  // Format time for X axis — show time + date like CTFd
+  const formatXAxis = (timeStr) => {
     const d = new Date(timeStr);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
-      d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   };
 
-  const formatTimeShort = (timeStr) => {
+  const formatXAxisDate = (timeStr) => {
     const d = new Date(timeStr);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || payload.length === 0) return null;
+    const d = new Date(label);
+    const timeLabel = d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
     return (
-      <div className="glass-card rounded-lg p-3 shadow-xl border border-white/30 backdrop-blur-xl text-xs">
-        <p className="font-mono text-on-surface-variant/60 mb-2">{formatTime(label)}</p>
+      <div className="bg-white rounded-lg p-3 shadow-lg border border-gray-200 text-xs">
+        <p className="font-medium text-gray-600 mb-2">{timeLabel}</p>
         <div className="space-y-1">
           {payload
             .filter((p) => p.value > 0)
@@ -57,11 +55,11 @@ function ScoreChart({ chartData, teams }) {
             .map((entry, i) => (
               <div key={i} className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                  <span className="font-bold text-on-surface">{entry.name}</span>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                  <span className="text-gray-800 font-medium">{entry.name}</span>
                 </div>
                 <span className="font-mono font-bold" style={{ color: entry.color }}>
-                  {entry.value.toLocaleString()} PTS
+                  {entry.value.toLocaleString()}
                 </span>
               </div>
             ))}
@@ -70,159 +68,109 @@ function ScoreChart({ chartData, teams }) {
     );
   };
 
-  const ChartComponent = chartType === 'area' ? AreaChart : LineChart;
+  // Build the table data — sorted by score descending
+  const tableData = (rankings || [])
+    .slice(0, 10)
+    .map((team, idx) => ({
+      place: idx + 1,
+      name: team.team_name,
+      score: team.total_score || 0,
+      color: TEAM_COLORS[idx % TEAM_COLORS.length],
+    }));
 
   return (
-    <div className="glass-card rounded-xl p-inner-padding relative overflow-hidden">
-      {/* Subtle background glow */}
-      <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-[60px] -mr-24 -mt-24 pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-32 h-32 bg-secondary/5 rounded-full blur-[40px] -ml-16 -mb-16 pointer-events-none" />
+    <div className="space-y-6">
+      {/* Chart Card — CTFd-style clean white */}
+      <div className="bg-white/95 rounded-xl p-6 md:p-8 shadow-sm border border-gray-200">
+        <h3 className="text-center text-xl font-semibold text-gray-800 mb-6">Top 10 Teams</h3>
 
-      {/* Header */}
-      <div className="relative flex items-center justify-between mb-6 pb-4 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-            <span className="material-symbols-outlined text-primary">show_chart</span>
-          </div>
-          <div>
-            <h3 className="font-h3 text-h3 tracking-tight text-primary">SCORE_TIMELINE</h3>
-            <p className="text-[10px] font-mono text-on-surface-variant/50 uppercase">
-              Cumulative points over time • {teams.length} team{teams.length !== 1 ? 's' : ''}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-1 bg-surface-container/50 p-1 rounded-lg">
-          <button
-            onClick={() => setChartType('area')}
-            className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 ${
-              chartType === 'area'
-                ? 'bg-primary-container/40 text-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-primary'
-            }`}
-          >
-            <span className="material-symbols-outlined text-sm">area_chart</span>
-            AREA
-          </button>
-          <button
-            onClick={() => setChartType('line')}
-            className={`px-3 py-1.5 text-[10px] font-bold rounded-md transition-all flex items-center gap-1 ${
-              chartType === 'line'
-                ? 'bg-primary-container/40 text-primary shadow-sm'
-                : 'text-on-surface-variant hover:text-primary'
-            }`}
-          >
-            <span className="material-symbols-outlined text-sm">timeline</span>
-            LINE
-          </button>
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div className="relative" style={{ height: 350 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <ChartComponent data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-            <defs>
-              {teams.map((name, i) => (
-                <linearGradient key={name} id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={TEAM_COLORS[i % TEAM_COLORS.length]} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={TEAM_COLORS[i % TEAM_COLORS.length]} stopOpacity={0.02} />
-                </linearGradient>
-              ))}
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 6"
-              stroke="rgba(255,255,255,0.08)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="time"
-              tickFormatter={formatTimeShort}
-              tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'monospace' }}
-              axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-              tickLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10, fontFamily: 'monospace' }}
-              axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-              tickLine={false}
-              tickFormatter={(v) => `${v}`}
-              width={50}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend
-              wrapperStyle={{ paddingTop: 16, fontSize: 11 }}
-              iconType="circle"
-              iconSize={8}
-              formatter={(value) => (
-                <span style={{ color: 'rgba(255,255,255,0.7)', fontFamily: 'monospace', fontSize: 11 }}>
-                  {value}
-                </span>
-              )}
-            />
-            {teams.map((name, i) =>
-              chartType === 'area' ? (
-                <Area
-                  key={name}
-                  type="stepAfter"
-                  dataKey={name}
-                  stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
-                  strokeWidth={2.5}
-                  fill={`url(#gradient-${i})`}
-                  dot={false}
-                  activeDot={{
-                    r: 5,
-                    strokeWidth: 2,
-                    stroke: '#fff',
-                    fill: TEAM_COLORS[i % TEAM_COLORS.length],
-                  }}
-                />
-              ) : (
+        <div style={{ height: 380 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 30 }}>
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="rgba(0,0,0,0.08)"
+                vertical={true}
+              />
+              <XAxis
+                dataKey="time"
+                tickFormatter={formatXAxis}
+                tick={{ fill: '#666', fontSize: 11 }}
+                axisLine={{ stroke: '#ccc' }}
+                tickLine={{ stroke: '#ccc' }}
+                interval="preserveStartEnd"
+                label={{
+                  value: chartData.length > 0 ? formatXAxisDate(chartData[0].time) : '',
+                  position: 'insideBottomLeft',
+                  offset: -20,
+                  style: { fill: '#999', fontSize: 11 },
+                }}
+              />
+              <YAxis
+                tick={{ fill: '#666', fontSize: 11 }}
+                axisLine={{ stroke: '#ccc' }}
+                tickLine={{ stroke: '#ccc' }}
+                tickFormatter={(v) => v.toLocaleString()}
+                width={55}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend
+                wrapperStyle={{ paddingTop: 12, fontSize: 12 }}
+                iconType="plainline"
+                iconSize={18}
+                formatter={(value) => (
+                  <span style={{ color: '#555', fontSize: 12 }}>{value}</span>
+                )}
+              />
+              {teams.slice(0, 10).map((name, i) => (
                 <Line
                   key={name}
-                  type="stepAfter"
+                  type="linear"
                   dataKey={name}
                   stroke={TEAM_COLORS[i % TEAM_COLORS.length]}
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{
-                    r: 5,
-                    strokeWidth: 2,
-                    stroke: '#fff',
-                    fill: TEAM_COLORS[i % TEAM_COLORS.length],
-                  }}
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: TEAM_COLORS[i % TEAM_COLORS.length], strokeWidth: 0 }}
+                  activeDot={{ r: 5, strokeWidth: 2, stroke: '#fff', fill: TEAM_COLORS[i % TEAM_COLORS.length] }}
+                  connectNulls
                 />
-              )
-            )}
-          </ChartComponent>
-        </ResponsiveContainer>
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      {/* Team score legend cards */}
-      {teams.length > 0 && (
-        <div className="flex flex-wrap gap-3 mt-6 pt-4 border-t border-white/10">
-          {teams.map((name, i) => {
-            const lastPoint = chartData[chartData.length - 1];
-            const score = lastPoint?.[name] || 0;
-            return (
+      {/* Score Table — CTFd-style Place / Team / Score */}
+      {tableData.length > 0 && (
+        <div className="bg-white/95 rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {/* Table Header */}
+          <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="col-span-2 text-sm font-semibold text-gray-600">Place</div>
+            <div className="col-span-6 text-sm font-semibold text-gray-600">Team</div>
+            <div className="col-span-4 text-sm font-semibold text-gray-600 text-right">Score</div>
+          </div>
+          {/* Table Rows */}
+          <div className="divide-y divide-gray-100">
+            {tableData.map((row) => (
               <div
-                key={name}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-white/5"
+                key={row.place}
+                className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-gray-50/80 transition-colors"
               >
-                <div
-                  className="w-3 h-3 rounded-full shadow-sm"
-                  style={{ backgroundColor: TEAM_COLORS[i % TEAM_COLORS.length] }}
-                />
-                <span className="text-xs font-bold text-on-surface">{name}</span>
-                <span
-                  className="text-xs font-mono font-bold"
-                  style={{ color: TEAM_COLORS[i % TEAM_COLORS.length] }}
-                >
-                  {score.toLocaleString()}
-                </span>
+                <div className="col-span-2">
+                  <span className="text-sm font-medium text-gray-700">{row.place}</span>
+                </div>
+                <div className="col-span-6">
+                  <span className="text-sm font-medium" style={{ color: row.color }}>
+                    {row.name}
+                  </span>
+                </div>
+                <div className="col-span-4 text-right">
+                  <span className="text-sm font-semibold text-gray-800">
+                    {row.score.toLocaleString()}
+                  </span>
+                </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -304,7 +252,7 @@ export default function Leaderboard() {
         <>
           {/* Podium */}
           {top3.length > 0 && (
-            <section className={`grid gap-gutter ${podiumOrder.length === 1 ? 'grid-cols-1 max-w-md mx-auto' : podiumOrder.length === 2 ? 'grid-cols-2 max-w-2xl mx-auto' : 'grid-cols-3'}`}>
+            <section className={`grid gap-gutter pt-20 overflow-visible ${podiumOrder.length === 1 ? 'grid-cols-1 max-w-md mx-auto' : podiumOrder.length === 2 ? 'grid-cols-2 max-w-2xl mx-auto' : 'grid-cols-3'}`}>
               {podiumOrder.map((team, idx) => {
                 const config = podiumConfig[idx] || podiumConfig[0];
                 const rank = rankings.indexOf(team) + 1;
@@ -362,7 +310,7 @@ export default function Leaderboard() {
           )}
 
           {/* Score Timeline Chart */}
-          <ScoreChart chartData={chartData} teams={chartTeams} />
+          <ScoreChart chartData={chartData} teams={chartTeams} rankings={rankings} />
 
           {/* Rankings Table */}
           {rest.length > 0 && (

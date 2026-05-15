@@ -1,6 +1,12 @@
 import { Router } from 'express';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import db from '../db.js';
 import { authMiddleware, adminMiddleware } from '../middleware/auth.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const router = Router();
 router.use(authMiddleware, adminMiddleware);
@@ -98,6 +104,101 @@ router.get('/stats', (req, res) => {
   } catch (err) {
     console.error('Admin stats error:', err);
     res.status(500).json({ message: 'Failed to load stats' });
+  }
+});
+
+// GET /api/admin/join-requests — all pending requests across all teams
+router.get('/join-requests', (req, res) => {
+  try {
+    const requests = db.prepare(`
+      SELECT jr.id, jr.status, jr.created_at,
+             u.id as user_id, u.username, u.email,
+             t.id as team_id, t.name as team_name,
+             captain.username as captain_name
+      FROM join_requests jr
+      JOIN users u ON u.id = jr.user_id
+      JOIN teams t ON t.id = jr.team_id
+      LEFT JOIN users captain ON captain.id = t.captain_id
+      ORDER BY
+        CASE jr.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+        jr.created_at DESC
+    `).all();
+    res.json({ requests });
+  } catch (err) {
+    console.error('Admin join requests error:', err);
+    res.status(500).json({ message: 'Failed to load join requests' });
+  }
+});
+
+// GET /api/admin/health — system health metrics
+router.get('/health', (req, res) => {
+  try {
+    const dbPath = join(__dirname, '..', 'ctf.db');
+
+    // DB file size
+    let dbSizeMB = 0;
+    try {
+      const stat = fs.statSync(dbPath);
+      dbSizeMB = (stat.size / (1024 * 1024)).toFixed(2);
+    } catch { dbSizeMB = 0; }
+
+    // Recent activity (last 24h)
+    const recentSolves = db.prepare(
+      "SELECT COUNT(*) as c FROM solves WHERE solved_at >= datetime('now', '-24 hours')"
+    ).get().c;
+
+    const recentRegistrations = db.prepare(
+      "SELECT COUNT(*) as c FROM users WHERE created_at >= datetime('now', '-24 hours')"
+    ).get().c;
+
+    // Avg score per team
+    const avgScore = db.prepare(`
+      SELECT COALESCE(ROUND(AVG(team_score), 0), 0) as avg FROM (
+        SELECT t.id, COALESCE(SUM(c.points), 0) as team_score
+        FROM teams t
+        LEFT JOIN solves s ON s.team_id = t.id
+        LEFT JOIN challenges c ON c.id = s.challenge_id
+        GROUP BY t.id
+      )
+    `).get().avg;
+
+    // Active challenges
+    const activeChallenges = db.prepare(
+      "SELECT COUNT(*) as c FROM challenges WHERE status = 'active'"
+    ).get().c;
+
+    const totalChallenges = db.prepare('SELECT COUNT(*) as c FROM challenges').get().c;
+
+    // Total teams with at least one solve
+    const activeTeams = db.prepare(
+      'SELECT COUNT(DISTINCT team_id) as c FROM solves WHERE team_id IS NOT NULL'
+    ).get().c;
+
+    const totalTeams = db.prepare('SELECT COUNT(*) as c FROM teams').get().c;
+
+    // Pending join requests count
+    const pendingRequests = db.prepare(
+      "SELECT COUNT(*) as c FROM join_requests WHERE status = 'pending'"
+    ).get().c;
+
+    // Server uptime
+    const uptimeSeconds = process.uptime();
+
+    res.json({
+      db_size_mb: parseFloat(dbSizeMB),
+      uptime_seconds: Math.floor(uptimeSeconds),
+      recent_solves_24h: recentSolves,
+      recent_registrations_24h: recentRegistrations,
+      avg_team_score: avgScore,
+      active_challenges: activeChallenges,
+      total_challenges: totalChallenges,
+      active_teams: activeTeams,
+      total_teams: totalTeams,
+      pending_requests: pendingRequests,
+    });
+  } catch (err) {
+    console.error('Admin health error:', err);
+    res.status(500).json({ message: 'Failed to load health data' });
   }
 });
 

@@ -22,6 +22,8 @@ export const adminChallengesAPI = {
   update: (id, data) => api.put(`/admin/challenges/${id}`, data).then((r) => r.data),
   delete: (id) => api.delete(`/admin/challenges/${id}`).then((r) => r.data),
   getStats: () => api.get('/admin/stats').then((r) => r.data),
+  getHealth: () => api.get('/admin/health').then((r) => r.data),
+  getJoinRequests: () => api.get('/admin/join-requests').then((r) => r.data),
 };
 
 export const adminUsersAPI = {

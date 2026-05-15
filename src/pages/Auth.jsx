@@ -9,17 +9,35 @@ export default function Auth() {
     username: '',
     email: '',
     password: '',
+    confirmPassword: '',
   });
+  const [formError, setFormError] = useState('');
   const { login, register, loading, error, clearError } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     clearError();
+    setFormError('');
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setFormError('');
+
+    // B2: Confirm password validation (register only)
+    if (activeTab === 'register') {
+      if (formData.password !== formData.confirmPassword) {
+        setFormError('Passwords do not match');
+        return;
+      }
+      // B3: Password minimum 8 characters
+      if (formData.password.length < 8) {
+        setFormError('Password must be at least 8 characters');
+        return;
+      }
+    }
+
     try {
       if (activeTab === 'login') {
         const user = await login({
@@ -29,6 +47,7 @@ export default function Auth() {
         // If user has no team, redirect to team setup
         navigate(user.team_id ? '/dashboard' : '/team-setup');
       } else {
+        // B2: Only send username, email, password — NOT confirmPassword
         await register({
           username: formData.username,
           email: formData.email,
@@ -45,8 +64,11 @@ export default function Auth() {
   const switchTab = (tab) => {
     setActiveTab(tab);
     clearError();
-    setFormData({ username: '', email: '', password: '' });
+    setFormError('');
+    setFormData({ username: '', email: '', password: '', confirmPassword: '' });
   };
+
+  const displayError = formError || error;
 
   return (
     <div className="bg-background min-h-screen flex flex-col font-body-md text-on-surface overflow-x-hidden">
@@ -101,10 +123,10 @@ export default function Auth() {
           </div>
 
           {/* Error */}
-          {error && (
+          {displayError && (
             <div className="p-3 bg-error/10 border border-error/30 rounded-lg text-sm text-error font-mono flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">error</span>
-              {error}
+              {displayError}
             </div>
           )}
 
@@ -159,13 +181,35 @@ export default function Auth() {
                   value={formData.password}
                   onChange={handleChange}
                   className="glass-input w-full pl-12 pr-4 py-3 rounded-lg font-mono text-mono placeholder:text-on-surface-variant/30"
-                  placeholder="Min 6 characters"
+                  placeholder="Min 8 characters"
                   type="password"
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </div>
             </div>
+
+            {/* B2: Confirm Password (register only) */}
+            {activeTab === 'register' && (
+              <div className="flex flex-col gap-2">
+                <label className="font-label-caps text-[10px] text-on-surface-variant/70 ml-2">CONFIRM PASSWORD</label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/50 text-[20px]">
+                    lock_reset
+                  </span>
+                  <input
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    className="glass-input w-full pl-12 pr-4 py-3 rounded-lg font-mono text-mono placeholder:text-on-surface-variant/30"
+                    placeholder="Re-enter password"
+                    type="password"
+                    required
+                    minLength={8}
+                  />
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"
